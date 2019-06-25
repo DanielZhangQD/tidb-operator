@@ -28,6 +28,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/pingcap/pd/pkg/typeutil"
 	"github.com/pingcap/pd/server"
+	"github.com/pingcap/tidb-operator/pkg/apis/pdapi"
 )
 
 const (
@@ -41,7 +42,7 @@ func getClientServer(h func(http.ResponseWriter, *http.Request)) *httptest.Serve
 
 func TestHealth(t *testing.T) {
 	g := NewGomegaWithT(t)
-	healths := []MemberHealth{
+	healths := []pdapi.MemberHealth{
 		{Name: "pd1", MemberID: 1, Health: false},
 		{Name: "pd2", MemberID: 2, Health: true},
 		{Name: "pd3", MemberID: 3, Health: true},
@@ -54,7 +55,7 @@ func TestHealth(t *testing.T) {
 		path     string
 		method   string
 		resp     []byte
-		want     []MemberHealth
+		want     []pdapi.MemberHealth
 	}{{
 		caseName: "GetHealth",
 		path:     fmt.Sprintf("/%s", healthPrefix),
@@ -165,7 +166,7 @@ func TestGetMembers(t *testing.T) {
 
 	member1 := &pdpb.Member{Name: "testMember1", MemberId: uint64(1)}
 	member2 := &pdpb.Member{Name: "testMember2", MemberId: uint64(2)}
-	members := &MembersInfo{
+	members := &pdapi.MembersInfo{
 		Members: []*pdpb.Member{
 			member1,
 			member2,
@@ -183,7 +184,7 @@ func TestGetMembers(t *testing.T) {
 		path     string
 		method   string
 		resp     []byte
-		want     *MembersInfo
+		want     *pdapi.MembersInfo
 	}{
 		{
 			caseName: "GetMembers",
@@ -360,7 +361,7 @@ func TestDeleteMember(t *testing.T) {
 	g := NewGomegaWithT(t)
 	name := "testMember"
 	member := &pdpb.Member{Name: name, MemberId: uint64(1)}
-	membersExist := &MembersInfo{
+	membersExist := &pdapi.MembersInfo{
 		Members: []*pdpb.Member{
 			member,
 		},
@@ -370,7 +371,7 @@ func TestDeleteMember(t *testing.T) {
 	membersExistBytes, err := json.Marshal(membersExist)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	membersNotExist := &MembersInfo{
+	membersNotExist := &pdapi.MembersInfo{
 		Members: []*pdpb.Member{},
 	}
 	membersNotExistBytes, err := json.Marshal(membersNotExist)
@@ -454,7 +455,7 @@ func TestDeleteMemberByID(t *testing.T) {
 	g := NewGomegaWithT(t)
 	id := uint64(1)
 	member := &pdpb.Member{Name: "test", MemberId: id}
-	membersExist := &MembersInfo{
+	membersExist := &pdapi.MembersInfo{
 		Members: []*pdpb.Member{
 			member,
 		},
@@ -464,7 +465,7 @@ func TestDeleteMemberByID(t *testing.T) {
 	membersExistBytes, err := json.Marshal(membersExist)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	membersNotExist := &MembersInfo{
+	membersNotExist := &pdapi.MembersInfo{
 		Members: []*pdpb.Member{},
 	}
 	membersNotExistBytes, err := json.Marshal(membersNotExist)

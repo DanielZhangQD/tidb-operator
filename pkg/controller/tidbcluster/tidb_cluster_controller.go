@@ -19,6 +19,7 @@ import (
 
 	"github.com/golang/glog"
 	perrors "github.com/pingcap/errors"
+	"github.com/pingcap/tidb-operator/pkg/apis/pdapi"
 	"github.com/pingcap/tidb-operator/pkg/apis/pingcap.com/v1alpha1"
 	"github.com/pingcap/tidb-operator/pkg/client/clientset/versioned"
 	informers "github.com/pingcap/tidb-operator/pkg/client/informers/externalversions"
@@ -72,6 +73,7 @@ func NewController(
 	informerFactory informers.SharedInformerFactory,
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
 	autoFailover bool,
+	operatorImage string,
 	pdFailoverPeriod time.Duration,
 	tikvFailoverPeriod time.Duration,
 	tidbFailoverPeriod time.Duration,
@@ -92,7 +94,7 @@ func NewController(
 	nodeInformer := kubeInformerFactory.Core().V1().Nodes()
 
 	tcControl := controller.NewRealTidbClusterControl(cli, tcInformer.Lister(), recorder)
-	pdControl := controller.NewDefaultPDControl()
+	pdControl := pdapi.NewDefaultPDControl()
 	tidbControl := controller.NewDefaultTiDBControl()
 	setControl := controller.NewRealStatefuSetControl(kubeCli, setInformer.Lister(), recorder)
 	svcControl := controller.NewRealServiceControl(kubeCli, svcInformer.Lister(), recorder)
@@ -137,6 +139,7 @@ func NewController(
 				podInformer.Lister(),
 				nodeInformer.Lister(),
 				autoFailover,
+				operatorImage,
 				tikvFailover,
 				tikvScaler,
 				tikvUpgrader,
@@ -150,6 +153,7 @@ func NewController(
 				podInformer.Lister(),
 				tidbUpgrader,
 				autoFailover,
+				operatorImage,
 				tidbFailover,
 			),
 			meta.NewReclaimPolicyManager(

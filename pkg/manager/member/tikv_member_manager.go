@@ -20,6 +20,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/tidb-operator/pkg/apis/pdapi"
 	"github.com/pingcap/tidb-operator/pkg/apis/pingcap.com/v1alpha1"
 	"github.com/pingcap/tidb-operator/pkg/controller"
 	"github.com/pingcap/tidb-operator/pkg/label"
@@ -40,20 +41,21 @@ import (
 type tikvMemberManager struct {
 	setControl                   controller.StatefulSetControlInterface
 	svcControl                   controller.ServiceControlInterface
-	pdControl                    controller.PDControlInterface
+	pdControl                    pdapi.PDControlInterface
 	setLister                    v1beta1.StatefulSetLister
 	svcLister                    corelisters.ServiceLister
 	podLister                    corelisters.PodLister
 	nodeLister                   corelisters.NodeLister
 	autoFailover                 bool
+	operatorImage                string
 	tikvFailover                 Failover
 	tikvScaler                   Scaler
 	tikvUpgrader                 Upgrader
-	tikvStatefulSetIsUpgradingFn func(corelisters.PodLister, controller.PDControlInterface, *apps.StatefulSet, *v1alpha1.TidbCluster) (bool, error)
+	tikvStatefulSetIsUpgradingFn func(corelisters.PodLister, pdapi.PDControlInterface, *apps.StatefulSet, *v1alpha1.TidbCluster) (bool, error)
 }
 
 // NewTiKVMemberManager returns a *tikvMemberManager
-func NewTiKVMemberManager(pdControl controller.PDControlInterface,
+func NewTiKVMemberManager(pdControl pdapi.PDControlInterface,
 	setControl controller.StatefulSetControlInterface,
 	svcControl controller.ServiceControlInterface,
 	setLister v1beta1.StatefulSetLister,
@@ -61,21 +63,23 @@ func NewTiKVMemberManager(pdControl controller.PDControlInterface,
 	podLister corelisters.PodLister,
 	nodeLister corelisters.NodeLister,
 	autoFailover bool,
+	operatorImage string,
 	tikvFailover Failover,
 	tikvScaler Scaler,
 	tikvUpgrader Upgrader) manager.Manager {
 	kvmm := tikvMemberManager{
-		pdControl:    pdControl,
-		podLister:    podLister,
-		nodeLister:   nodeLister,
-		setControl:   setControl,
-		svcControl:   svcControl,
-		setLister:    setLister,
-		svcLister:    svcLister,
-		autoFailover: autoFailover,
-		tikvFailover: tikvFailover,
-		tikvScaler:   tikvScaler,
-		tikvUpgrader: tikvUpgrader,
+		pdControl:     pdControl,
+		podLister:     podLister,
+		nodeLister:    nodeLister,
+		setControl:    setControl,
+		svcControl:    svcControl,
+		setLister:     setLister,
+		svcLister:     svcLister,
+		autoFailover:  autoFailover,
+		operatorImage: operatorImage,
+		tikvFailover:  tikvFailover,
+		tikvScaler:    tikvScaler,
+		tikvUpgrader:  tikvUpgrader,
 	}
 	kvmm.tikvStatefulSetIsUpgradingFn = tikvStatefulSetIsUpgrading
 	return &kvmm
@@ -94,6 +98,9 @@ type SvcConfig struct {
 func (tkmm *tikvMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
 	ns := tc.GetNamespace()
 	tcName := tc.GetName()
+	if err := tkmm.syncStatefulSetForTidbCluster(tc); err != nil {
+		return err
+	}
 
 	if !tc.PDIsAvailable() {
 		return controller.RequeueErrorf("TidbCluster: [%s/%s], waiting for PD cluster running", ns, tcName)
@@ -113,7 +120,8 @@ func (tkmm *tikvMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
 			return err
 		}
 	}
-	return tkmm.syncStatefulSetForTidbCluster(tc)
+
+	return nil
 }
 
 func (tkmm *tikvMemberManager) syncServiceForTidbCluster(tc *v1alpha1.TidbCluster, svcConfig SvcConfig) error {
@@ -179,6 +187,10 @@ func (tkmm *tikvMemberManager) syncStatefulSetForTidbCluster(tc *v1alpha1.TidbCl
 		}
 		tc.Status.TiKV.StatefulSet = &apps.StatefulSetStatus{}
 		return nil
+	}
+
+	if !tc.PDIsAvailable() {
+		return controller.RequeueErrorf("TidbCluster: [%s/%s], waiting for PD cluster running", ns, tcName)
 	}
 
 	oldSet := oldSetTmp.DeepCopy()
@@ -335,9 +347,10 @@ func (tkmm *tikvMemberManager) getNewSetForTidbCluster(tc *v1alpha1.TidbCluster)
 					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
-					SchedulerName: tc.Spec.SchedulerName,
-					Affinity:      tc.Spec.TiKV.Affinity,
-					NodeSelector:  tc.Spec.TiKV.NodeSelector,
+					SchedulerName:  tc.Spec.SchedulerName,
+					Affinity:       tc.Spec.TiKV.Affinity,
+					NodeSelector:   tc.Spec.TiKV.NodeSelector,
+					InitContainers: []corev1.Container{WaitForPDContainer(tc.GetName(), tkmm.operatorImage)},
 					Containers: []corev1.Container{
 						{
 							Name:            v1alpha1.TiKVMemberType.String(),
@@ -443,7 +456,7 @@ func (tkmm *tikvMemberManager) syncTidbClusterStatus(tc *v1alpha1.TidbCluster, s
 	stores := map[string]v1alpha1.TiKVStore{}
 	tombstoneStores := map[string]v1alpha1.TiKVStore{}
 
-	pdCli := tkmm.pdControl.GetPDClient(tc)
+	pdCli := controller.GetPDClient(tkmm.pdControl, tc)
 	// This only returns Up/Down/Offline stores
 	storesInfo, err := pdCli.GetStores()
 	if err != nil {
@@ -495,7 +508,7 @@ func (tkmm *tikvMemberManager) syncTidbClusterStatus(tc *v1alpha1.TidbCluster, s
 	return nil
 }
 
-func (tkmm *tikvMemberManager) getTiKVStore(store *controller.StoreInfo) *v1alpha1.TiKVStore {
+func (tkmm *tikvMemberManager) getTiKVStore(store *pdapi.StoreInfo) *v1alpha1.TiKVStore {
 	if store.Store == nil || store.Status == nil {
 		return nil
 	}
@@ -518,7 +531,7 @@ func (tkmm *tikvMemberManager) setStoreLabelsForTiKV(tc *v1alpha1.TidbCluster) (
 	// for unit test
 	setCount := 0
 
-	pdCli := tkmm.pdControl.GetPDClient(tc)
+	pdCli := controller.GetPDClient(tkmm.pdControl, tc)
 	storesInfo, err := pdCli.GetStores()
 	if err != nil {
 		return setCount, err
@@ -597,7 +610,7 @@ func (tkmm *tikvMemberManager) storeLabelsEqualNodeLabels(storeLabels []*metapb.
 	return reflect.DeepEqual(ls, nodeLabels)
 }
 
-func tikvStatefulSetIsUpgrading(podLister corelisters.PodLister, pdControl controller.PDControlInterface, set *apps.StatefulSet, tc *v1alpha1.TidbCluster) (bool, error) {
+func tikvStatefulSetIsUpgrading(podLister corelisters.PodLister, pdControl pdapi.PDControlInterface, set *apps.StatefulSet, tc *v1alpha1.TidbCluster) (bool, error) {
 	if statefulSetIsUpgrading(set) {
 		return true, nil
 	}

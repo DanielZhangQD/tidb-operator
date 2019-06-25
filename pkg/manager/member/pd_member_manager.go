@@ -18,6 +18,7 @@ import (
 	"strconv"
 
 	"github.com/golang/glog"
+	"github.com/pingcap/tidb-operator/pkg/apis/pdapi"
 	"github.com/pingcap/tidb-operator/pkg/apis/pingcap.com/v1alpha1"
 	"github.com/pingcap/tidb-operator/pkg/controller"
 	"github.com/pingcap/tidb-operator/pkg/label"
@@ -34,7 +35,7 @@ import (
 )
 
 type pdMemberManager struct {
-	pdControl    controller.PDControlInterface
+	pdControl    pdapi.PDControlInterface
 	setControl   controller.StatefulSetControlInterface
 	svcControl   controller.ServiceControlInterface
 	setLister    v1beta1.StatefulSetLister
@@ -50,7 +51,7 @@ type pdMemberManager struct {
 }
 
 // NewPDMemberManager returns a *pdMemberManager
-func NewPDMemberManager(pdControl controller.PDControlInterface,
+func NewPDMemberManager(pdControl pdapi.PDControlInterface,
 	setControl controller.StatefulSetControlInterface,
 	svcControl controller.ServiceControlInterface,
 	setLister v1beta1.StatefulSetLister,
@@ -196,7 +197,7 @@ func (pmm *pdMemberManager) syncPDStatefulSetForTidbCluster(tc *v1alpha1.TidbClu
 	oldPDSet := oldPDSetTmp.DeepCopy()
 
 	if err := pmm.syncTidbClusterStatus(tc, oldPDSet); err != nil {
-		glog.Errorf("failed to sync TidbCluster: [%s/%s]'s status, error: %v", ns, tcName, err)
+		return err
 	}
 
 	if !templateEqual(newPDSet.Spec.Template, oldPDSet.Spec.Template) || tc.Status.PD.Phase == v1alpha1.UpgradePhase {
@@ -259,7 +260,7 @@ func (pmm *pdMemberManager) syncTidbClusterStatus(tc *v1alpha1.TidbCluster, set 
 		tc.Status.PD.Phase = v1alpha1.NormalPhase
 	}
 
-	pdClient := pmm.pdControl.GetPDClient(tc)
+	pdClient := controller.GetPDClient(pmm.pdControl, tc)
 
 	healthInfo, err := pdClient.GetHealth()
 	if err != nil {
@@ -267,13 +268,14 @@ func (pmm *pdMemberManager) syncTidbClusterStatus(tc *v1alpha1.TidbCluster, set 
 		// get endpoints info
 		eps, epErr := pmm.epsLister.Endpoints(ns).Get(controller.PDMemberName(tcName))
 		if epErr != nil {
-			return fmt.Errorf("%s, %s", err, epErr)
+			err = fmt.Errorf("%s, %s", err, epErr)
+		} else {
+			// pd service has no endpoints
+			if eps != nil && len(eps.Subsets) == 0 {
+				err = fmt.Errorf("%s, service %s/%s has no endpoints", err, ns, controller.PDMemberName(tcName))
+			}
 		}
-		// pd service has no endpoints
-		if eps != nil && len(eps.Subsets) == 0 {
-			return fmt.Errorf("%s, service %s/%s has no endpoints", err, ns, controller.PDMemberName(tcName))
-		}
-		return err
+		return controller.RequeueErrorf("error getting PD health: %v", err)
 	}
 
 	cluster, err := pdClient.GetCluster()
