@@ -19,6 +19,13 @@ import (
 )
 
 // GetPDClient gets the pd client from the TidbCluster
-func GetPDClient(pdi pdapi.PDControlInterface, tc *v1alpha1.TidbCluster) pdapi.PDClient {
-	return pdi.GetPDClient(pdapi.Namespace(tc.GetNamespace()), tc.GetName())
+func GetPDClient(pdControl pdapi.PDControlInterface, tc *v1alpha1.TidbCluster) pdapi.PDClient {
+	return pdControl.GetPDClient(pdapi.Namespace(tc.GetNamespace()), tc.GetName())
+}
+
+// NewFakePDClient creates a fake pdclient taht is set as the pd client
+func NewFakePDClient(pdControl *pdapi.FakePDControl, tc *v1alpha1.TidbCluster) *pdapi.FakePDClient {
+	pdClient := pdapi.NewFakePDClient()
+	pdControl.SetPDClient(pdapi.Namespace(tc.GetNamespace()), tc.GetName(), pdClient)
+	return pdClient
 }
