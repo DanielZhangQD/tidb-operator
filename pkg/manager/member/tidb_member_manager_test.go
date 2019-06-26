@@ -101,7 +101,7 @@ func TestTiDBMemberManagerSyncCreate(t *testing.T) {
 			},
 			errWhenCreateStatefulSet: false,
 			err:                      true,
-			setCreated:               false,
+			setCreated:               true,
 		},
 		{
 			name:                     "error when create statefulset",
