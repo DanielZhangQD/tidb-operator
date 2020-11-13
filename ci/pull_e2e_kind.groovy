@@ -300,31 +300,31 @@ try {
                         }
                     }
 
-                    stage("Prepare for e2e") {
-                        withCredentials([usernamePassword(credentialsId: 'TIDB_OPERATOR_HUB_AUTH', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            sh """#!/bin/bash
-                            set -eu
-                            echo "info: logging into hub.pingcap.net"
-                            docker login -u \$USERNAME --password-stdin hub.pingcap.net <<< \$PASSWORD
-                            echo "info: build and push images for e2e"
-                            NO_BUILD=y DOCKER_REPO=hub.pingcap.net/tidb-operator-e2e IMAGE_TAG=${IMAGE_TAG} make docker-push e2e-docker-push
-                            echo "info: download binaries for e2e"
-                            SKIP_BUILD=y SKIP_IMAGE_BUILD=y SKIP_UP=y SKIP_TEST=y SKIP_DOWN=y ./hack/e2e.sh
-                            echo "info: change ownerships for jenkins"
-                            # we run as root in our pods, this is required
-                            # otherwise jenkins agent will fail because of the lack of permission
-                            chown -R 1000:1000 .
-                            """
-                        }
-                        stash excludes: "vendor/**,deploy/**,tests/**", name: "tidb-operator"
-                    }
+                    // stage("Prepare for e2e") {
+                    //     withCredentials([usernamePassword(credentialsId: 'TIDB_OPERATOR_HUB_AUTH', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                    //         sh """#!/bin/bash
+                    //         set -eu
+                    //         echo "info: logging into hub.pingcap.net"
+                    //         docker login -u \$USERNAME --password-stdin hub.pingcap.net <<< \$PASSWORD
+                    //         echo "info: build and push images for e2e"
+                    //         NO_BUILD=y DOCKER_REPO=hub.pingcap.net/tidb-operator-e2e IMAGE_TAG=${IMAGE_TAG} make docker-push e2e-docker-push
+                    //         echo "info: download binaries for e2e"
+                    //         SKIP_BUILD=y SKIP_IMAGE_BUILD=y SKIP_UP=y SKIP_TEST=y SKIP_DOWN=y ./hack/e2e.sh
+                    //         echo "info: change ownerships for jenkins"
+                    //         # we run as root in our pods, this is required
+                    //         # otherwise jenkins agent will fail because of the lack of permission
+                    //         chown -R 1000:1000 .
+                    //         """
+                    //     }
+                    //     stash excludes: "vendor/**,deploy/**,tests/**", name: "tidb-operator"
+                    // }
                 }
             }
         }
         }
 
-        def GLOBALS = "KIND_ETCD_DATADIR=/mnt/tmpfs/etcd SKIP_BUILD=y SKIP_IMAGE_BUILD=y DOCKER_REPO=hub.pingcap.net/tidb-operator-e2e IMAGE_TAG=${IMAGE_TAG} DELETE_NAMESPACE_ON_FAILURE=true GINKGO_NO_COLOR=y"
-        build("tidb-operator", "${GLOBALS} GINKGO_NODES=${params.GINKGO_NODES} ./hack/e2e.sh -- ${params.E2E_ARGS}")
+        // def GLOBALS = "KIND_ETCD_DATADIR=/mnt/tmpfs/etcd SKIP_BUILD=y SKIP_IMAGE_BUILD=y DOCKER_REPO=hub.pingcap.net/tidb-operator-e2e IMAGE_TAG=${IMAGE_TAG} DELETE_NAMESPACE_ON_FAILURE=true GINKGO_NO_COLOR=y"
+        // build("tidb-operator", "${GLOBALS} GINKGO_NODES=${params.GINKGO_NODES} ./hack/e2e.sh -- ${params.E2E_ARGS}")
 
         if (GIT_REF ==~ /^(master|)$/ || GIT_REF ==~ /^(release-.*)$/
             || GIT_REF ==~ /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/) {
